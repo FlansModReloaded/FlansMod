@@ -1308,35 +1308,36 @@ public abstract class EntityDriveable extends Entity implements IControllable, I
 		setPosition(x, y, z);
 		setRotation(rotationYaw, rotationPitch, rotationRoll);
 	}
-	
+
 	public void checkForCollisions()
 	{
 		boolean crashInWater = false;
 		double speed = getSpeedXYZ();
+
 		for(DriveablePosition p : getDriveableType().collisionPoints)
 		{
 			if(driveableData.parts.get(p.part).dead)
 				continue;
 			Vector3f lastRelPos = prevAxes.findLocalVectorGlobally(p.position);
 			Vec3d lastPos = new Vec3d(prevPosX + lastRelPos.x, prevPosY + lastRelPos.y, prevPosZ + lastRelPos.z);
-			
+
 			Vector3f currentRelPos = axes.findLocalVectorGlobally(p.position);
 			Vec3d currentPos = new Vec3d(posX + currentRelPos.x, posY + currentRelPos.y, posZ + currentRelPos.z);
-			
+
 			if(FlansMod.DEBUG && world.isRemote)
 			{
 				world.spawnEntity(new EntityDebugVector(world, new Vector3f(lastPos),
 					Vector3f.sub(currentRelPos, lastRelPos, null), 10, 1F, 0F, 0F));
 			}
-			
+
 			RayTraceResult hit = world.rayTraceBlocks(lastPos, currentPos, crashInWater);
 			if(hit != null && hit.typeOfHit == Type.BLOCK)
 			{
 				BlockPos pos = hit.getBlockPos();
 				IBlockState state = world.getBlockState(pos);
-				
+
 				float blockHardness = state.getBlockHardness(world, pos);
-				float damage = (float)speed;
+				float damage = (float)(Math.pow(speed*4, Math.pow(1.8, speed*2D)));	//Let the received damage grow exponentially based on the speed
 
 				// unbreakable block
 				if(blockHardness < 0F)
@@ -1345,30 +1346,33 @@ public abstract class EntityDriveable extends Entity implements IControllable, I
 				}
 				else
 				{
-					damage *= blockHardness * blockHardness;
+					damage *= Math.pow(blockHardness * blockHardness, 1.3);
 				}
 
 				// Attack the part
-				if(!attackPart(p.part, DamageSource.IN_WALL, damage) 
+				if(!attackPart(p.part, DamageSource.IN_WALL, damage)
 					&& TeamsManager.driveablesBreakBlocks)
 				{
 					// And if it didn't die from the attack, break the block
 					// TODO: [1.12] Heck
 					// playAuxSFXAtEntity(null, 2001, pos, Block.getStateId(state));
-					
+
 					if(!world.isRemote && blockHardness <= collisionForce)
 					{
 						WorldServer worldServer = (WorldServer)world;
 						destroyBlock(worldServer, pos, getDriver(), true);
 					}
 				}
-				else
+				else if (!world.isRemote)	//Prevent Client-Side creation of the explosion to avoid ghost Blocks
 				{
-					// The part died!
-					world.createExplosion(this, currentPos.x, currentPos.y, currentPos.z, 1F, false);
+					//TODO: Introduce settings to change size of the explosion and whether it should cause fire
+					//Calculate the explosion size based on the speed and the amount of fuel in the vehicle
+					float explosionStrength = (float) (speed + Math.sqrt(Math.abs((driveableData.fuelInTank + 1D) / 1000D)));
+
+					//Create the explosion
+					world.newExplosion(this, currentPos.x, currentPos.y, currentPos.z, explosionStrength, true, true);
 				}
 			}
-			
 		}
 	}
 	
